@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # craftzdog dotfiles 自动更新脚本
-# 会保留你的自定义配置 (claude.lua)
+# 更新后自动提交到你的 GitHub 仓库
 
 set -e
 
@@ -9,7 +9,7 @@ REPO_URL="https://github.com/craftzdog/dotfiles-public.git"
 TEMP_DIR="/tmp/craftzdog-dotfiles"
 NVIM_CONFIG="$HOME/.config/nvim"
 CUSTOM_PLUGINS="$NVIM_CONFIG/lua/plugins/claude.lua"
-LOG_FILE="$HOME/.config/nvim/update.log"
+LOG_FILE="$NVIM_CONFIG/update.log"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
@@ -35,10 +35,8 @@ restore_custom() {
 check_update() {
     log "检查 craftzdog/dotfiles-public 更新..."
 
-    # 获取远程最新 commit
     REMOTE_COMMIT=$(git ls-remote "$REPO_URL" HEAD | cut -f1)
 
-    # 获取本地记录的 commit
     LOCAL_COMMIT=""
     if [ -f "$NVIM_CONFIG/.craftzdog-commit" ]; then
         LOCAL_COMMIT=$(cat "$NVIM_CONFIG/.craftzdog-commit")
@@ -57,27 +55,19 @@ check_update() {
 do_update() {
     log "开始更新..."
 
-    # 清理临时目录
     rm -rf "$TEMP_DIR"
-
-    # 克隆最新版本
     git clone --depth 1 "$REPO_URL" "$TEMP_DIR"
 
-    # 备份自定义配置
     backup_custom
 
-    # 更新配置文件（保留 plugins 目录中的自定义文件）
-    rsync -av --exclude='plugins/claude.lua' \
+    rsync -av --exclude='plugins/claude.lua' --exclude='.git' \
         "$TEMP_DIR/.config/nvim/" "$NVIM_CONFIG/"
 
-    # 恢复自定义配置
     restore_custom
 
-    # 记录当前 commit
     cd "$TEMP_DIR"
     git rev-parse HEAD > "$NVIM_CONFIG/.craftzdog-commit"
 
-    # 清理
     rm -rf "$TEMP_DIR"
 
     log "更新完成！"
@@ -88,16 +78,35 @@ do_update() {
     log "插件同步完成"
 }
 
+# 提交到 GitHub
+git_commit() {
+    log "提交更新到 GitHub..."
+
+    cd "$NVIM_CONFIG"
+
+    # 检查是否有变更
+    if git diff --quiet && git diff --staged --quiet; then
+        log "没有变更需要提交"
+        return 0
+    fi
+
+    git add -A
+    git commit -m "Auto-update from craftzdog $(date '+%Y-%m-%d')"
+    git push origin main
+
+    log "已推送到 GitHub"
+}
+
 # 主函数
 main() {
     log "========== 开始检查更新 =========="
 
     if check_update; then
         do_update
+        git_commit
     fi
 
     log "========== 检查完成 =========="
 }
 
-# 运行
 main
